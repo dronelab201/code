@@ -1,0 +1,130 @@
+#include <TinyGPS++.h>
+#include <SPI.h>
+#include <SD.h>
+#include <LoRa.h>
+
+TinyGPSPlus gps;
+
+#define BUTTON_PIN 4
+#define SD_CS 5
+#define LORA_SS 27
+#define LORA_RST 14
+#define LORA_DIO0 26
+
+double latList[200];
+double lonList[200];
+int pointCount = 0;
+
+void saveKML()
+{
+  File file = SD.open("/gps.kml", FILE_WRITE);
+
+  if (!file)
+  {
+    Serial.println("File write failed");
+    return;
+  }
+
+  file.println("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
+  file.println("<kml xmlns=\"http://www.opengis.net/kml/2.2\">");
+  file.println("<Document>");
+
+  for (int i = 0; i < pointCount; i++)
+  {
+    file.println("<Placemark>");
+    file.println("<Point>");
+    file.print("<coordinates>");
+    file.print(lonList[i],6);
+    file.print(",");
+    file.print(latList[i],6);
+    file.println(",0</coordinates>");
+    file.println("</Point>");
+    file.println("</Placemark>");
+  }
+
+  file.println("</Document>");
+  file.println("</kml>");
+
+  file.close();
+
+  Serial.println("Saved to SD (KML)");
+}
+
+void setup()
+{
+  Serial.begin(115200);
+  Serial2.begin(9600, SERIAL_8N1, 16, 17);
+
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+
+  SPI.begin();
+
+  if (!SD.begin(SD_CS))
+  {
+    Serial.println("SD card not detected");
+    while (1);
+  }
+
+  Serial.println("SD card OK");
+
+  LoRa.setPins(LORA_SS, LORA_RST, LORA_DIO0);
+
+  if (!LoRa.begin(433E6))
+  {
+    Serial.println("LoRa init failed!");
+    while (1);
+  }
+
+  Serial.println("LoRa initialized");
+  Serial.println("System Ready");
+}
+
+void loop()
+{
+  while (Serial2.available())
+  {
+    gps.encode(Serial2.read());
+  }
+
+  static bool lastButtonState = HIGH;
+  bool currentState = digitalRead(BUTTON_PIN);
+
+  if (lastButtonState == HIGH && currentState == LOW)
+  {
+    if (!gps.location.isValid())
+    {
+      Serial.println("Waiting for GPS signal...");
+      return;
+    }
+
+    double lat = gps.location.lat();
+    double lon = gps.location.lng();
+
+    Serial.print("Saving & Sending: ");
+    Serial.print(lat,6);
+    Serial.print(",");
+    Serial.println(lon,6);
+
+    if(pointCount < 200)
+    {
+      latList[pointCount] = lat;
+      lonList[pointCount] = lon;
+      pointCount++;
+    }
+
+    saveKML();
+
+    // SEND THROUGH LORA
+    LoRa.beginPacket();
+    LoRa.print(lat,6);
+    LoRa.print(",");
+    LoRa.print(lon,6);
+    LoRa.endPacket();
+
+    Serial.println("Saved to SD & Sent");
+
+    delay(2000);
+  }
+
+  lastButtonState = currentState;
+}
