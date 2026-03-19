@@ -2,6 +2,7 @@
 geotag on button press
 
 # TODO
+- Kicad 9.0.8
 - sketch of circuit in pen and paper
 - kicad format
 - replace ESP32 with Raspberry Pi Pico
